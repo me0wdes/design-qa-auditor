@@ -1,0 +1,16 @@
+{
+  "name": "design-qa-auditor",
+  "owner": {
+    "name": "me0wdes"
+  },
+  "metadata": {
+    "description": "Скилл дизайн-QA: аудит Figma-макетов, сайтов и приложений"
+  },
+  "plugins": [
+    {
+      "name": "design-qa-auditor",
+      "source": "./",
+      "description": "Аудит Figma, HTML и мобильных экранов: токены, компоненты, Auto Layout, адаптив, состояния, доступность, типографика, сценарии и сверка Figma с HTML"
+    }
+  ]
+}
