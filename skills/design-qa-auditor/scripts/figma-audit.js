@@ -100,6 +100,24 @@ for (const n of nodes) {
   for (const [key, re, skip] of TYPO) { if (skip && skip.test(txt)) continue; const m = txt.match(re); if (m) add('typo:' + key, n, { match: m[0].replace(/ /g, '⍽'), text: txt.slice(0, 50) }); }
 }
 
+// Анимация и состояния у интерактивных компонентов: варианты hover/pressed и прототипные переходы
+const INTER = /button|btn|кнопк|chip|tab|toggle|switch|checkbox|radio|select|dropdown|input|field|link|card|row|item|accordion/i;
+const sets = [];
+for (const i of root.findAllWithCriteria ? root.findAllWithCriteria({ types: ['INSTANCE'] }) : []) { const mc = await i.getMainComponentAsync(); if (mc) sets.push(mc); }
+const seenSets = new Set();
+for (const mc of sets) {
+  const owner = mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent : mc;
+  if (seenSets.has(owner.id) || !INTER.test(owner.name) || /^(icon|ico|logo|system)\b|\/icon\b/i.test(owner.name)) continue;
+  seenSets.add(owner.id);
+  const variants = owner.type === 'COMPONENT_SET' ? owner.children : [owner];
+  const names = variants.map(v => v.name.toLowerCase()).join(' | ');
+  const missing = [['hover', /hover|навед/], ['pressed', /press|active|нажат/], ['focus', /focus|фокус/], ['disabled', /disabled|неактив/]].filter(([, re]) => !re.test(names)).map(([k]) => k);
+  if (missing.length) add('component-missing-states', owner, { missing });
+  const reactions = variants.flatMap(v => g(v, 'reactions') || []);
+  const animated = reactions.some(r => (r.actions || [r.action]).some(a => a && a.transition && a.transition.type !== 'INSTANT'));
+  if (!animated) add('component-no-animated-transition', owner, { reactions: reactions.length });
+}
+
 const topColors = Object.entries(rawColors).sort((a, b) => b[1] - a[1]).slice(0, 15);
 const vars = await figma.variables.getLocalVariablesAsync();
 return {

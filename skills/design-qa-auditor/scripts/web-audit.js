@@ -69,6 +69,36 @@
   }
   for (const img of root.querySelectorAll('img')) if (visible(img) && !img.hasAttribute('alt')) add('img-without-alt', img, { src: img.currentSrc.split('/').pop() });
 
+  // 3a. Анимация отклика: у каждого интерактивного элемента должен быть переход состояний
+  const secs = v => Math.max(0, ...v.split(',').map(x => parseFloat(x) * (x.trim().endsWith('ms') ? 0.001 : 1)));
+  const clickable = new Set(interactive);
+  for (const el of all) if (visible(el) && getComputedStyle(el).cursor === 'pointer' && !(el.parentElement && getComputedStyle(el.parentElement).cursor === 'pointer')) clickable.add(el);
+  for (const el of clickable) {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && /checkbox|radio|hidden/.test(el.type || '')) continue;
+    const cs = getComputedStyle(el);
+    // переход может висеть на самом элементе или на его первом визуальном потомке (подложка, иконка)
+    const own = secs(cs.transitionDuration), anim = cs.animationName !== 'none';
+    const kid = [...el.querySelectorAll('*')].slice(0, 6).some(k => secs(getComputedStyle(k).transitionDuration) > 0);
+    if (!own && !anim && !kid) add('no-interaction-transition', el, { tag: el.tagName.toLowerCase(), text: short(el) });
+    else if (own > 0.5) add('slow-interaction-transition', el, { duration: own + 's', text: short(el) });
+    else if (own && /^linear$/.test(cs.transitionTimingFunction.trim())) add('linear-easing', el, { text: short(el) });
+  }
+
+  // 3b. Системные контролы: выпадающие списки, пикеры и чекбоксы в стиле ОС
+  for (const el of root.querySelectorAll('select')) {
+    if (!visible(el)) continue;
+    const ap = getComputedStyle(el).appearance;
+    if (ap !== 'base-select') add('native-select', el, { appearance: ap, options: el.options.length, note: 'открытый список рисует ОС, стилями не меняется' });
+  }
+  for (const el of root.querySelectorAll('input')) {
+    if (!visible(el)) continue;
+    const t = el.type, ap = getComputedStyle(el).appearance;
+    if (/^(checkbox|radio|range)$/.test(t) && ap !== 'none') add('native-' + t, el, { appearance: ap });
+    if (/^(date|time|datetime-local|month|week|color|file)$/.test(t)) add('native-picker', el, { type: t });
+    if (el.hasAttribute('list')) add('native-datalist', el, { list: el.getAttribute('list') });
+  }
+  for (const el of interactive) if (el.hasAttribute('title') && !el.getAttribute('aria-label')) add('native-title-tooltip', el, { title: el.title.slice(0, 40) });
+
   // 4. Контраст текста (WCAG AA): цвет против первого непрозрачного фона предков
   const rgba = s => { const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null; const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r, g, b, a }; };
   const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
