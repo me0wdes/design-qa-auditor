@@ -99,6 +99,61 @@
   }
   for (const el of interactive) if (el.hasAttribute('title') && !el.getAttribute('aria-label')) add('native-title-tooltip', el, { title: el.title.slice(0, 40) });
 
+  // 3c. Мобильная версия: проверки, которые имеют смысл только на узком экране
+  if (vw < 768) {
+    const vp = document.querySelector('meta[name=viewport]');
+    const vc = vp ? vp.content.replace(/\s/g, '') : '';
+    if (!/width=device-width/.test(vc)) add('viewport-meta', document.documentElement, { content: vc || 'нет meta viewport' });
+    if (/user-scalable=(no|0)|maximum-scale=1(\.0)?(,|$)/.test(vc)) add('viewport-meta', document.documentElement, { content: vc, note: 'запрещено масштабирование' });
+    // iOS зумит страницу при фокусе на поле с текстом меньше 16px
+    for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]), select, textarea'))
+      if (visible(el) && parseFloat(getComputedStyle(el).fontSize) < 16) add('ios-input-zoom', el, { fontSize: getComputedStyle(el).fontSize });
+    const smallText = new Set();
+    for (const el of all) {
+      if (!visible(el) || smallText.has(el) || ![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+      if (parseFloat(getComputedStyle(el).fontSize) < 12) { smallText.add(el); add('mobile-small-text', el, { fontSize: getComputedStyle(el).fontSize, text: short(el) }); }
+    }
+    // Фиксированные и sticky-панели вместе не должны съедать больше четверти экрана
+    let chrome = 0; const bars = [];
+    for (const el of all) {
+      const pos = getComputedStyle(el).position;
+      if ((pos === 'fixed' || pos === 'sticky') && visible(el)) {
+        const r = el.getBoundingClientRect();
+        if (r.width > vw * 0.6 && r.height < innerHeight * 0.9 && !bars.some(b => b.contains(el))) { bars.push(el); chrome += Math.min(r.height, innerHeight); }
+      }
+    }
+    if (chrome > innerHeight * 0.25) add('fixed-chrome-too-tall', document.documentElement, { px: Math.round(chrome), share: Math.round(chrome / innerHeight * 100) + '%', bars: bars.map(sel).slice(0, 5) });
+    // Мелкие цели слишком близко друг к другу
+    const small = interactive.filter(el => { const r = el.getBoundingClientRect(); return r.width < 44 || r.height < 44; });
+    for (let i = 0; i < small.length; i++) for (let j = i + 1; j < small.length; j++) {
+      const a = small[i].getBoundingClientRect(), b = small[j].getBoundingClientRect();
+      const gap = Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+      if (gap >= 0 && gap < 8 && !small[i].contains(small[j]) && !small[j].contains(small[i])) add('crowded-tap-targets', small[i], { gap: Math.round(gap), with: sel(small[j]) });
+    }
+    // Искажённые картинки
+    for (const img of root.querySelectorAll('img')) {
+      if (!visible(img) || !img.naturalWidth) continue;
+      const r = img.getBoundingClientRect(), fit = getComputedStyle(img).objectFit;
+      const k = (r.width / r.height) / (img.naturalWidth / img.naturalHeight);
+      if (fit === 'fill' && (k > 1.05 || k < 0.95)) add('image-distorted', img, { stretch: +k.toFixed(2), src: img.currentSrc.split('/').pop() });
+    }
+  }
+  // Контент, который появляется только при наведении: на телефоне до него не добраться
+  const hoverOnly = [], vh100 = [];
+  for (const sheet of document.styleSheets) {
+    let rules; try { rules = sheet.cssRules; } catch { continue; }
+    const walk = list => { for (const r of list) {
+      if (r.cssRules) { if (!/hover:\s*hover|pointer:\s*fine/.test(r.conditionText || r.media?.mediaText || '')) walk(r.cssRules); continue; }
+      if (!r.style) continue;
+      const st = r.style;
+      if (/:hover/.test(r.selectorText || '') && (/^(block|flex|grid|inline|inline-block|inline-flex)$/.test(st.display) || st.visibility === 'visible' || st.opacity === '1' || st.pointerEvents === 'auto')) hoverOnly.push(r.selectorText);
+      if (/100vh/.test(st.height + st.minHeight + st.maxHeight)) vh100.push(r.selectorText);
+    } };
+    walk(rules);
+  }
+  if (hoverOnly.length) out['hover-only-content'] = { count: hoverOnly.length, examples: hoverOnly.slice(0, LIMIT), note: 'проверь, есть ли путь к этому контенту без наведения' };
+  if (vh100.length) out['css-100vh'] = { count: vh100.length, examples: vh100.slice(0, LIMIT), note: 'в мобильном Safari низ обрезается панелью, нужен dvh/svh' };
+
   // 4. Контраст текста (WCAG AA): цвет против первого непрозрачного фона предков
   const rgba = s => { const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null; const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r, g, b, a }; };
   const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
@@ -173,6 +228,8 @@
     url: location.href, viewport: `${vw}x${innerHeight}`, dpr: devicePixelRatio,
     reducedMotionRules: [...document.styleSheets].some(s => { try { return [...s.cssRules].some(r => /prefers-reduced-motion/.test(r.conditionText || r.media?.mediaText || '')); } catch { return false; } }),
     summary: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.count])),
+    // все действия на экране: сравни списки на мобильной и десктопной ширине, чтобы найти пропавшие
+    actions: [...new Set(interactive.map(el => (el.getAttribute('aria-label') || el.textContent || el.value || el.title || '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))].slice(0, 150),
     details: out,
   };
 })()

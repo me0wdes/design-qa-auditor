@@ -100,6 +100,27 @@ for (const n of nodes) {
   for (const [key, re, skip] of TYPO) { if (skip && skip.test(txt)) continue; const m = txt.match(re); if (m) add('typo:' + key, n, { match: m[0].replace(/ /g, '⍽'), text: txt.slice(0, 50) }); }
 }
 
+// Экраны: самые внешние фреймы размером с экран. По ширинам видно, есть ли мобильная версия
+const isScreen = n => n.type === 'FRAME' && n.width >= 320 && n.width <= 1920 && n.height >= 500; // шире 1920 это холст или обёртка флоу, а не экран
+const screens = nodes.filter(n => g(n, 'visible') !== false && isScreen(n) && !(function up(p) { for (; p && p !== root.parent; p = p.parent) if (p !== n && isScreen(p)) return true; return false; })(n.parent));
+const frameWidths = {};
+for (const sc of screens) { const w = Math.round(sc.width); frameWidths[w] = (frameWidths[w] || 0) + 1; }
+const mobileScreens = screens.filter(sc => sc.width <= 430);
+if (screens.length && !mobileScreens.length) add('no-mobile-frames', root, { widths: Object.keys(frameWidths).join(', ') });
+for (const sc of mobileScreens) {
+  const box = sc.absoluteBoundingBox;
+  for (const t of sc.findAllWithCriteria({ types: ['TEXT'] })) {
+    if (g(t, 'visible') === false || insideInstance(t)) continue;
+    const fs = g(t, 'fontSize');
+    if (typeof fs === 'number' && fs < 12) add('mobile-small-text', t, { fontSize: fs, text: t.characters.slice(0, 40) });
+    const b = t.absoluteBoundingBox;
+    if (b && box && b.width < box.width - 2) {
+      const left = b.x - box.x, right = box.x + box.width - (b.x + b.width);
+      if (left < 16 || right < 16) add('mobile-edge-padding', t, { left: Math.round(left), right: Math.round(right), text: t.characters.slice(0, 40) });
+    }
+  }
+}
+
 // Анимация и состояния у интерактивных компонентов: варианты hover/pressed и прототипные переходы
 const INTER = /button|btn|кнопк|chip|tab|toggle|switch|checkbox|radio|select|dropdown|input|field|link|card|row|item|accordion/i;
 const sets = [];
@@ -123,6 +144,7 @@ const vars = await figma.variables.getLocalVariablesAsync();
 return {
   root: { id: root.id, name: root.name, type: root.type, nodes: nodes.length },
   localVariables: vars.length,
+  frameWidths,
   summary: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.count])),
   topHardcodedColors: topColors,
   details: out,
