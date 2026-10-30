@@ -10,7 +10,7 @@
     {
       "name": "design-qa-auditor",
       "source": "./",
-      "description": "Аудит Figma, HTML и мобильных экранов: токены, компоненты, Auto Layout, адаптив, состояния, доступность, типографика, сценарии и сверка Figma с HTML"
+      "description": "Аудит Figma, HTML и мобильных экранов: токены, компоненты, Auto Layout, адаптив, состояния, доступность, типографика, сценарии, E2E-прогоны на Playwright и Maestro и сверка Figma с HTML"
     }
   ]
 }
